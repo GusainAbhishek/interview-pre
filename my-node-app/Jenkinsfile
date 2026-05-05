@@ -1,16 +1,53 @@
 pipeline {
   agent any
+  environment {
+    REGISTRY = 'myregistry'
+    IMAGE    = 'my-node-app'
+  }
   stages {
-    stage('Build') {
+    stage('Build & Push Image') {
       steps {
-        sh 'docker build -t my-node-app:latest .'
-        sh 'docker push myregistry/my-node-app:latest'
+        withCredentials([usernamePassword(
+          credentialsId: 'docker-hub-creds',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            docker build -t $REGISTRY/$IMAGE:$BUILD_NUMBER .
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+            docker push $REGISTRY/$IMAGE:$BUILD_NUMBER
+          '''
+        }
       }
     }
-    stage('Deploy') {
+    stage('Create/Update K8s Secret') {
       steps {
-        sh 'kubectl apply -f k8s/deployment.yaml'
+        withCredentials([
+          string(credentialsId: 'db-host',  secretVariable: 'DB_HOST'),
+          string(credentialsId: 'api-key',  secretVariable: 'API_KEY')
+        ]) {
+          sh '''
+            kubectl create secret generic my-app-secrets \
+              --from-literal=DB_HOST=$DB_HOST \
+              --from-literal=API_KEY=$API_KEY \
+              --dry-run=client -o yaml | kubectl apply -f -
+          '''
+        }
       }
+    }
+    stage('Deploy to Kubernetes') {
+      steps {
+        sh '''
+          kubectl set image deployment/my-node-app \
+            my-node-app=$REGISTRY/$IMAGE:$BUILD_NUMBER
+          kubectl rollout status deployment/my-node-app --timeout=120s
+        '''
+      }
+    }
+  }
+  post {
+    failure {
+      sh 'kubectl rollout undo deployment/my-node-app'
     }
   }
 }
