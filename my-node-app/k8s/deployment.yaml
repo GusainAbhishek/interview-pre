@@ -8,5 +8,5 @@ spec:
     spec:
       containers:
         - name: my-node-app
-          image: myregistry/my-node-app:latest
+          image: gusaindoc/node:latest
           # <--- NO env section! App crashes on startup
