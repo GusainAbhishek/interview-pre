@@ -16,5 +16,8 @@ spec:
         - name: my-node-app
           image: gusaindoc/node:latest
           # <--- NO env section! App crashes on startup
+          envFrom:
+            - secretRef:
+                name: my-app-secrets
           ports:
             - containerPort: 3000
